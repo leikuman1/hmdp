@@ -53,6 +53,6 @@ public class ShopTypeServiceImpl extends ServiceImpl<ShopTypeMapper, ShopType> i
         //查到了就写入缓存并设置过期时间
         stringRedisTemplate.opsForValue().set(key, JSONUtil.toJsonStr(shopList), RedisConstants.CACHE_SHOP_TTL, TimeUnit.MINUTES);
         //返回结果
-        return null;
+        return Result.ok(shopList);
     }
 }

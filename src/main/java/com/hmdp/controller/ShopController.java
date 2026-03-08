@@ -33,7 +33,7 @@ public class ShopController {
      */
     @GetMapping("/{id}")
     public Result queryShopById(@PathVariable("id") Long id) {
-        return Result.ok(shopService.queryWithMutex(id));
+        return Result.ok(shopService.queryById(id));
     }
 
     /**
