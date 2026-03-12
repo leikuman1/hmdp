@@ -1,12 +1,17 @@
 package com.hmdp;
 
+import com.hmdp.entity.SeckillVoucher;
+import com.hmdp.entity.Voucher;
+import com.hmdp.service.ISeckillVoucherService;
 import com.hmdp.service.IShopService;
+import com.hmdp.service.IVoucherService;
 import com.hmdp.utils.CacheClient;
 import com.hmdp.utils.RedisIdWorker;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.test.context.SpringBootTest;
 
 import javax.annotation.Resource;
+import java.time.LocalDateTime;
 import java.util.EnumSet;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
@@ -21,6 +26,9 @@ class HmDianPingApplicationTests {
 
     @Resource
     private IShopService iShopService;
+
+    @Resource
+    private ISeckillVoucherService voucherService;
 
 
     private ExecutorService es = Executors.newFixedThreadPool(500);
@@ -45,4 +53,11 @@ class HmDianPingApplicationTests {
         System.out.println("time = " + (end - begin));
     }
 
+    @Test
+    void testTime() {
+        System.out.println(LocalDateTime.now());
+        SeckillVoucher voucher = voucherService.getById(10L);
+        System.out.println(voucher.getEndTime());
+        System.out.println( java.time.ZoneId.systemDefault());
+    }
 }
