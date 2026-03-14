@@ -10,6 +10,8 @@ import com.hmdp.hmdp_server.service.IBlogService;
 import com.hmdp.hmdp_server.service.IUserService;
 import com.hmdp.hmdp_common.constant.SystemConstants;
 import com.hmdp.hmdp_common.utils.UserHolder;
+import io.swagger.annotations.Api;
+import io.swagger.annotations.ApiOperation;
 import org.springframework.web.bind.annotation.*;
 
 import javax.annotation.Resource;
@@ -23,6 +25,7 @@ import java.util.List;
  * @author 虎哥
  * @since 2021-12-22
  */
+@Api(tags = "博客管理")
 @RestController
 @RequestMapping("/blog")
 public class BlogController {
@@ -32,6 +35,7 @@ public class BlogController {
     @Resource
     private IUserService userService;
 
+    @ApiOperation("发布博客")
     @PostMapping
     public Result saveBlog(@RequestBody Blog blog) {
         // 获取登录用户
@@ -43,6 +47,7 @@ public class BlogController {
         return Result.ok(blog.getId());
     }
 
+    @ApiOperation("点赞博客")
     @PutMapping("/like/{id}")
     public Result likeBlog(@PathVariable("id") Long id) {
         // 修改点赞数量
@@ -51,6 +56,7 @@ public class BlogController {
         return Result.ok();
     }
 
+    @ApiOperation("查询我的博客")
     @GetMapping("/of/me")
     public Result queryMyBlog(@RequestParam(value = "current", defaultValue = "1") Integer current) {
         // 获取登录用户
@@ -63,6 +69,7 @@ public class BlogController {
         return Result.ok(records);
     }
 
+    @ApiOperation("查询热门博客")
     @GetMapping("/hot")
     public Result queryHotBlog(@RequestParam(value = "current", defaultValue = "1") Integer current) {
         // 根据用户查询
