@@ -21,6 +21,7 @@ public class Knife4jConfig {
     public Docket createRestApi() {
         return new Docket(DocumentationType.SWAGGER_2)
                 .apiInfo(apiInfo())
+                .pathMapping("/api")
                 .select()
                 .apis(RequestHandlerSelectors.basePackage("com.hmdp.hmdp_server.controller"))
                 .paths(PathSelectors.any())
