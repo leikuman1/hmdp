@@ -131,6 +131,7 @@ src/main/java/com/hmdp/
 - Maven 3.6+
 - MySQL 5.7+
 - Redis 3.2+
+- Nginx (可选，用于负载均衡)
 
 ### 配置数据库和Redis
 
@@ -152,6 +153,45 @@ spring:
 
 执行 `src/main/resources/db/hmdp.sql` 初始化数据库表。
 
+### Nginx 负载均衡配置（可选）
+
+项目提供了 Nginx 配置文件，可实现对 8081 和 8082 两个服务实例的轮询负载均衡。
+
+配置文件位于 `nginx/` 目录下：
+
+```
+nginx/
+├── nginx.conf          # Nginx主配置文件
+└── conf.d/
+    └── hmdp.conf       # 黑马点评服务配置
+```
+
+#### 使用方式
+
+1. 将 `nginx/nginx.conf` 替换 Nginx 安装目录下的 `conf/nginx.conf`
+2. 将 `nginx/conf.d/hmdp.conf` 放到 Nginx 安装目录的 `conf/conf.d/` 目录下
+3. 启动两个 Spring Boot 实例（分别使用 8081 和 8082 端口）
+4. 启动 Nginx
+
+```bash
+# 启动 Nginx
+nginx
+
+# 重载配置
+nginx -s reload
+
+# 停止 Nginx
+nginx -s stop
+```
+
+#### 配置说明
+
+- Nginx 监听端口：8080
+- 后端服务1：127.0.0.1:8081
+- 后端服务2：127.0.0.1:8082
+- 轮询策略：weight=1（权重相同）
+- 故障转移：max_fails=5, fail_timeout=10s
+
 ### 编译运行
 
 ```bash
@@ -167,7 +207,8 @@ java -jar target/hm-dianping-0.0.1-SNAPSHOT.jar
 
 ### 访问接口文档
 
-启动项目后访问：http://localhost:8081/doc.html
+- 直接访问： http://localhost:8081/doc.html
+- 通过 Nginx 访问： http://localhost:8080/doc.html
 
 ## 接口文档
 
@@ -192,6 +233,9 @@ java -jar target/hm-dianping-0.0.1-SNAPSHOT.jar
 | 文件上传 | POST /upload/blog | 上传图片 |
 
 ## 更新日志
+
+### v1.0.2 (2026-03-15)
+- 添加 Nginx 负载均衡配置，支持轮询 8081 和 8082 两个服务实例
 
 ### v1.0.1 (2026-03-15)
 - 添加 Knife4j 接口文档
