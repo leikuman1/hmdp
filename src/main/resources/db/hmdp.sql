@@ -1282,3 +1282,5 @@ CREATE TABLE `tb_voucher_order`  (
 -- ----------------------------
 
 SET FOREIGN_KEY_CHECKS = 1;
+
+alter table `tb_voucher_order` add unique index `uk_tbvo_userid_voucherid`(`user_id`, `voucher_id`);

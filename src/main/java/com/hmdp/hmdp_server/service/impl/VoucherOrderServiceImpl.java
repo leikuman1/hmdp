@@ -1,6 +1,8 @@
 package com.hmdp.hmdp_server.service.impl;
 
 import com.hmdp.hmdp_common.config.RabbitMQConfig;
+import com.hmdp.hmdp_common.constant.RedisConstants;
+import com.hmdp.hmdp_common.utils.RedisRateLimiter;
 import com.hmdp.hmdp_pojo.dto.Result;
 import com.hmdp.hmdp_pojo.entity.VoucherOrder;
 import com.hmdp.hmdp_server.mapper.VoucherOrderMapper;
@@ -32,6 +34,9 @@ import java.util.Collections;
 @Service
 @Slf4j
 public class VoucherOrderServiceImpl extends ServiceImpl<VoucherOrderMapper, VoucherOrder> implements IVoucherOrderService {
+    private static final long SECKILL_RATE_LIMIT_WINDOW_MILLIS = 1000L;
+    private static final long SECKILL_RATE_LIMIT_MAX_REQUESTS = 1L;
+
     @Resource
     private ISeckillVoucherService seckillVoucherService;
 
@@ -44,81 +49,15 @@ public class VoucherOrderServiceImpl extends ServiceImpl<VoucherOrderMapper, Vou
     @Resource
     private RabbitTemplate rabbitTemplate;
 
+    @Resource
+    private RedisRateLimiter redisRateLimiter;
+
     private static final DefaultRedisScript<Long> SECKILL_SCRIPT;
     static {
         SECKILL_SCRIPT = new DefaultRedisScript<>();
         SECKILL_SCRIPT.setLocation(new ClassPathResource("seckill.lua"));
         SECKILL_SCRIPT.setResultType(Long.class);
     }
-//
-//    private static final ExecutorService SECKILL_ORDER_EXECUTOR= Executors.newSingleThreadExecutor();
-//
-//    private class VoucherOrderHandler implements Runnable {
-//
-//        @Override
-//        public void run() {
-//            while (true) {
-//                try {
-//                    // 1.获取消息队列中的订单信息 XREADGROUP GROUP g1 c1 COUNT 1 BLOCK 2000 STREAMS s1 >
-//                    List<MapRecord<String, Object, Object>> list = stringRedisTemplate.opsForStream().read(
-//                            Consumer.from("g1", "c1"),
-//                            StreamReadOptions.empty().count(1).block(Duration.ofSeconds(2)),
-//                            StreamOffset.create("stream.orders", ReadOffset.lastConsumed())
-//                    );
-//                    // 2.判断订单信息是否为空
-//                    if (list == null || list.isEmpty()) {
-//                        // 如果为null，说明没有消息，继续下一次循环
-//                        continue;
-//                    }
-//                    // 解析数据
-//                    MapRecord<String, Object, Object> record = list.get(0);
-//                    Map<Object, Object> value = record.getValue();
-//                    VoucherOrder voucherOrder = BeanUtil.fillBeanWithMap(value, new VoucherOrder(), true);
-//                    // 3.创建订单
-//                    createVoucherOrder(voucherOrder);
-//                    // 4.确认消息 XACK
-//                    stringRedisTemplate.opsForStream().acknowledge("s1", "g1", record.getId());
-//                } catch (Exception e) {
-//                    log.error("处理订单异常", e);
-//                    //处理异常消息
-//                    handlePendingList();
-//                }
-//            }
-//        }
-//
-//        private void handlePendingList() {
-//            while (true) {
-//                try {
-//                    // 1.获取pending-list中的订单信息 XREADGROUP GROUP g1 c1 COUNT 1 BLOCK 2000 STREAMS s1 0
-//                    List<MapRecord<String, Object, Object>> list = stringRedisTemplate.opsForStream().read(
-//                            Consumer.from("g1", "c1"),
-//                            StreamReadOptions.empty().count(1),
-//                            StreamOffset.create("stream.orders", ReadOffset.from("0"))
-//                    );
-//                    // 2.判断订单信息是否为空
-//                    if (list == null || list.isEmpty()) {
-//                        // 如果为null，说明没有异常消息，结束循环
-//                        break;
-//                    }
-//                    // 解析数据
-//                    MapRecord<String, Object, Object> record = list.get(0);
-//                    Map<Object, Object> value = record.getValue();
-//                    VoucherOrder voucherOrder = BeanUtil.fillBeanWithMap(value, new VoucherOrder(), true);
-//                    // 3.创建订单
-//                    createVoucherOrder(voucherOrder);
-//                    // 4.确认消息 XACK
-//                    stringRedisTemplate.opsForStream().acknowledge("s1", "g1", record.getId());
-//                } catch (Exception e) {
-//                    log.error("处理pending订单异常", e);
-//                    try{
-//                        Thread.sleep(20);
-//                    }catch(InterruptedException ie){
-//                        ie.printStackTrace();
-//                    }
-//                }
-//            }
-//        }
-//    }
 
     /**
      * 秒杀优惠券订单
@@ -129,6 +68,16 @@ public class VoucherOrderServiceImpl extends ServiceImpl<VoucherOrderMapper, Vou
     public Result seckillVoucher(Long voucherId) {
         //获取用户
         Long userId = UserHolder.getUser().getId();
+        String rateLimitKey = RedisConstants.SECKILL_RATE_LIMIT_KEY + voucherId + ":" + userId;
+        boolean allowed = redisRateLimiter.isAllowed(
+                rateLimitKey,
+                SECKILL_RATE_LIMIT_WINDOW_MILLIS,
+                SECKILL_RATE_LIMIT_MAX_REQUESTS
+        );
+        if (!allowed) {
+            return Result.fail("请求过于频繁，请稍后重试");
+        }
+
         long orderId = redisIdWorker.nextId("order");
         // 1.执行lua脚本
         Long result = stringRedisTemplate.execute(
