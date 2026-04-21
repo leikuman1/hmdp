@@ -22,6 +22,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import javax.annotation.Resource;
 import java.util.Collections;
+import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * <p>
@@ -36,6 +37,7 @@ import java.util.Collections;
 public class VoucherOrderServiceImpl extends ServiceImpl<VoucherOrderMapper, VoucherOrder> implements IVoucherOrderService {
     private static final long SECKILL_RATE_LIMIT_WINDOW_MILLIS = 1000L;
     private static final long SECKILL_RATE_LIMIT_MAX_REQUESTS = 1L;
+    private static final long SOLD_OUT_FAST_FAIL_TTL_MILLIS = 1000L;
 
     @Resource
     private ISeckillVoucherService seckillVoucherService;
@@ -52,6 +54,9 @@ public class VoucherOrderServiceImpl extends ServiceImpl<VoucherOrderMapper, Vou
     @Resource
     private RedisRateLimiter redisRateLimiter;
 
+    // Local sold-out hints reduce repeated Redis hits after a voucher is sold out.
+    private final ConcurrentHashMap<Long, Long> soldOutFastFailUntil = new ConcurrentHashMap<>();
+
     private static final DefaultRedisScript<Long> SECKILL_SCRIPT;
     static {
         SECKILL_SCRIPT = new DefaultRedisScript<>();
@@ -66,6 +71,9 @@ public class VoucherOrderServiceImpl extends ServiceImpl<VoucherOrderMapper, Vou
      */
     @Override
     public Result seckillVoucher(Long voucherId) {
+        if (shouldFastFailSoldOut(voucherId)) {
+            return Result.fail("库存不足");
+        }
         //获取用户
         Long userId = UserHolder.getUser().getId();
         String rateLimitKey = RedisConstants.SECKILL_RATE_LIMIT_KEY + voucherId + ":" + userId;
@@ -89,6 +97,9 @@ public class VoucherOrderServiceImpl extends ServiceImpl<VoucherOrderMapper, Vou
         // 2.判断结果是否为0
         if (r != 0) {
             // 2.1.不为0 ，代表没有购买资格
+            if (r == 1) {
+                markSoldOutFastFail(voucherId);
+            }
             return Result.fail(r == 1 ? "库存不足" : "不能重复下单");
         }
         VoucherOrder voucherOrder = new VoucherOrder();
@@ -103,6 +114,23 @@ public class VoucherOrderServiceImpl extends ServiceImpl<VoucherOrderMapper, Vou
         );
         // 3.返回订单id
         return Result.ok(orderId);
+    }
+
+    private boolean shouldFastFailSoldOut(Long voucherId) {
+        Long fastFailUntil = soldOutFastFailUntil.get(voucherId);
+        if (fastFailUntil == null) {
+            return false;
+        }
+        long now = System.currentTimeMillis();
+        if (fastFailUntil <= now) {
+            soldOutFastFailUntil.remove(voucherId, fastFailUntil);
+            return false;
+        }
+        return true;
+    }
+
+    private void markSoldOutFastFail(Long voucherId) {
+        soldOutFastFailUntil.put(voucherId, System.currentTimeMillis() + SOLD_OUT_FAST_FAIL_TTL_MILLIS);
     }
 
     @Override
