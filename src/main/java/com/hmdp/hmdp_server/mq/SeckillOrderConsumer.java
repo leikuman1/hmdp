@@ -2,6 +2,7 @@ package com.hmdp.hmdp_server.mq;
 
 import com.hmdp.hmdp_common.config.RabbitMQConfig;
 import com.hmdp.hmdp_pojo.entity.VoucherOrder;
+import com.hmdp.hmdp_server.service.IDeadLetterOrderLogService;
 import com.hmdp.hmdp_server.service.IVoucherOrderService;
 import com.rabbitmq.client.Channel;
 import lombok.extern.slf4j.Slf4j;
@@ -18,6 +19,9 @@ public class SeckillOrderConsumer {
 
     @Resource
     private IVoucherOrderService voucherOrderService;
+
+    @Resource
+    private IDeadLetterOrderLogService deadLetterOrderLogService;
 
     @RabbitListener(queues = RabbitMQConfig.SECKILL_QUEUE)
     public void onMessage(VoucherOrder voucherOrder, Channel channel, Message message) throws IOException {
@@ -43,6 +47,11 @@ public class SeckillOrderConsumer {
             }
 
             log.error("消费秒杀订单二次失败，停止重试, deliveryTag={}, order={}", deliveryTag, voucherOrder, e);
+            try {
+                deadLetterOrderLogService.recordPendingFailure(voucherOrder, e);
+            } catch (Exception logException) {
+                log.error("记录死信失败上下文异常, order={}", voucherOrder, logException);
+            }
             channel.basicReject(deliveryTag, false);
         }
     }

@@ -58,10 +58,15 @@ public class VoucherOrderServiceImpl extends ServiceImpl<VoucherOrderMapper, Vou
     private final ConcurrentHashMap<Long, Long> soldOutFastFailUntil = new ConcurrentHashMap<>();
 
     private static final DefaultRedisScript<Long> SECKILL_SCRIPT;
+    private static final DefaultRedisScript<Long> ROLLBACK_SECKILL_SCRIPT;
     static {
         SECKILL_SCRIPT = new DefaultRedisScript<>();
         SECKILL_SCRIPT.setLocation(new ClassPathResource("seckill.lua"));
         SECKILL_SCRIPT.setResultType(Long.class);
+
+        ROLLBACK_SECKILL_SCRIPT = new DefaultRedisScript<>();
+        ROLLBACK_SECKILL_SCRIPT.setLocation(new ClassPathResource("rollback-seckill.lua"));
+        ROLLBACK_SECKILL_SCRIPT.setResultType(Long.class);
     }
 
     /**
@@ -107,11 +112,17 @@ public class VoucherOrderServiceImpl extends ServiceImpl<VoucherOrderMapper, Vou
         voucherOrder.setUserId(userId);
         voucherOrder.setVoucherId(voucherId);
 
-        rabbitTemplate.convertAndSend(
-                RabbitMQConfig.SECKILL_EXCHANGE,
-                RabbitMQConfig.SECKILL_ROUTING_KEY,
-                voucherOrder
-        );
+        try {
+            rabbitTemplate.convertAndSend(
+                    RabbitMQConfig.SECKILL_EXCHANGE,
+                    RabbitMQConfig.SECKILL_ROUTING_KEY,
+                    voucherOrder
+            );
+        } catch (Exception e) {
+            log.error("投递秒杀消息失败，准备回滚 Redis 预占, order={}", voucherOrder, e);
+            rollbackSeckillReservation(voucherId, userId);
+            return Result.fail("系统繁忙，请稍后重试");
+        }
         // 3.返回订单id
         return Result.ok(orderId);
     }
@@ -146,14 +157,40 @@ public class VoucherOrderServiceImpl extends ServiceImpl<VoucherOrderMapper, Vou
     @Transactional
     @Override
     public void createVoucherOrder(VoucherOrder voucherOrder) {
+        doCreateVoucherOrder(voucherOrder);
+    }
+
+    @Transactional
+    @Override
+    public boolean tryCreateVoucherOrder(VoucherOrder voucherOrder) {
+        return doCreateVoucherOrder(voucherOrder);
+    }
+
+    @Override
+    public boolean hasVoucherOrder(Long userId, Long voucherId) {
+        return query().eq("user_id", userId).eq("voucher_id", voucherId).count() > 0;
+    }
+
+    @Override
+    public boolean rollbackSeckillReservation(Long voucherId, Long userId) {
+        Long result = stringRedisTemplate.execute(
+                ROLLBACK_SECKILL_SCRIPT,
+                Collections.emptyList(),
+                voucherId.toString(),
+                userId.toString()
+        );
+        soldOutFastFailUntil.remove(voucherId);
+        return Long.valueOf(1L).equals(result);
+    }
+
+    private boolean doCreateVoucherOrder(VoucherOrder voucherOrder) {
         Long userId = voucherOrder.getUserId();
         Long voucherId = voucherOrder.getVoucherId();
 
         // 1) 幂等校验：同一用户同一券只能一单
-        int count = query().eq("user_id", userId).eq("voucher_id", voucherId).count();
-        if (count > 0) {
+        if (hasVoucherOrder(userId, voucherId)) {
             log.warn("重复下单, userId={}, voucherId={}", userId, voucherId);
-            return;
+            return true;
         }
 
         // 2) 扣库存（CAS风格）
@@ -164,15 +201,17 @@ public class VoucherOrderServiceImpl extends ServiceImpl<VoucherOrderMapper, Vou
                 .update();
         if (!success) {
             log.warn("库存不足, voucherId={}",voucherId);
-            return;
+            return false;
         }
 
         // 3) 保存订单（建议数据库有唯一索引兜底）
         try {
             save(voucherOrder);
+            return true;
         } catch (DuplicateKeyException e) {
             // 并发极端场景下的最终幂等兜底
             log.warn("唯一索引拦截重复订单, userId={}, voucherId={}", userId, voucherId);
+            return true;
         }
     }
 

@@ -89,8 +89,8 @@ CREATE TABLE `tb_seckill_voucher`  (
   `voucher_id` bigint(20) UNSIGNED NOT NULL COMMENT '关联的优惠券的id',
   `stock` int(8) NOT NULL COMMENT '库存',
   `create_time` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
-  `begin_time` timestamp NOT NULL DEFAULT '0000-00-00 00:00:00' COMMENT '生效时间',
-  `end_time` timestamp NOT NULL DEFAULT '0000-00-00 00:00:00' COMMENT '失效时间',
+  `begin_time` timestamp NOT NULL DEFAULT '2000-01-01 00:00:00' COMMENT '生效时间',
+  `end_time` timestamp NOT NULL DEFAULT '2000-01-01 00:00:00' COMMENT '失效时间',
   `update_time` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
   PRIMARY KEY (`voucher_id`) USING BTREE
 ) ENGINE = InnoDB CHARACTER SET = utf8mb4 COLLATE = utf8mb4_general_ci COMMENT = '秒杀优惠券表，与优惠券是一对一关系' ROW_FORMAT = Compact;
@@ -1279,6 +1279,33 @@ CREATE TABLE `tb_voucher_order`  (
 
 -- ----------------------------
 -- Records of tb_voucher_order
+-- ----------------------------
+
+-- ----------------------------
+-- Table structure for tb_dead_letter_order_log
+-- ----------------------------
+DROP TABLE IF EXISTS `tb_dead_letter_order_log`;
+CREATE TABLE `tb_dead_letter_order_log`  (
+  `id` bigint(20) UNSIGNED NOT NULL AUTO_INCREMENT COMMENT '主键',
+  `order_id` bigint(20) NOT NULL COMMENT '死信对应的订单id',
+  `user_id` bigint(20) UNSIGNED NOT NULL COMMENT '用户id',
+  `voucher_id` bigint(20) UNSIGNED NOT NULL COMMENT '优惠券id',
+  `status` varchar(32) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NOT NULL DEFAULT 'PENDING' COMMENT '处理状态：PENDING/SUCCESS/RETRIED_SUCCESS/ROLLED_BACK/MANUAL_REVIEW',
+  `last_error_type` varchar(128) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NULL DEFAULT NULL COMMENT '最后一次异常类型',
+  `last_error_msg` varchar(1024) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NULL DEFAULT NULL COMMENT '最后一次异常信息',
+  `dead_letter_count` int(11) UNSIGNED NOT NULL DEFAULT 1 COMMENT '进入死信次数',
+  `payload` longtext CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NULL COMMENT '原始消息内容',
+  `processed_time` timestamp NULL DEFAULT NULL COMMENT '最终处理时间',
+  `create_time` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+  `update_time` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+  PRIMARY KEY (`id`) USING BTREE,
+  UNIQUE INDEX `uk_tbdlol_order_id`(`order_id`) USING BTREE,
+  INDEX `idx_tbdlol_status`(`status`) USING BTREE,
+  INDEX `idx_tbdlol_user_voucher`(`user_id`, `voucher_id`) USING BTREE
+) ENGINE = InnoDB CHARACTER SET = utf8mb4 COLLATE = utf8mb4_general_ci ROW_FORMAT = Compact;
+
+-- ----------------------------
+-- Records of tb_dead_letter_order_log
 -- ----------------------------
 
 SET FOREIGN_KEY_CHECKS = 1;

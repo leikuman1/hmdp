@@ -23,4 +23,6 @@ public class RedisConstants {
 
     public static final String SHOP_TYPE_KEY = "shop:type";
     public static final long CACHE_SHOP_PHYSICAL_TTL_SECONDS = 24 * 60 * 60;
+
+
 }
